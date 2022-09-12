@@ -44,7 +44,7 @@ async def create_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    logger.info('In create game')
+    # Some logic to create game
     return States.IN_GAME
     
 
@@ -72,14 +72,20 @@ def main() -> None:
     env = Env()
     env.read_env()
 
-    redis = Redis(
+    application = Application.builder().token(env.str('TELEGRAM_BOT_TOKEN')).build()
+    application.bot_data['game_db'] = Redis(
         host=env.str('REDIS_HOST'),
         port=env.int('REDIS_PORT'),
-        db=env.int('REDIS_DB'),
+        db=env.int('REDIS_DB_GAME'),
         decode_responses=True,
     )
 
-    application = Application.builder().token(env.str('TELEGRAM_BOT_TOKEN')).build()
+    application.bot_data['user_db'] = Redis(
+        host=env.str('REDIS_HOST'),
+        port=env.int('REDIS_PORT'),
+        db=env.int('REDIS_DB_USER'),
+        decode_responses=True,
+    )
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
