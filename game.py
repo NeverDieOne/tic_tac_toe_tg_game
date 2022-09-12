@@ -14,6 +14,7 @@ class Game(BaseModel):
     id: int
     state: GameStates
     participants: list[int] = []
+    participants_messages_ids: set[int] = set()
     current_player: int | None = None
     field: list[list[str | None]] = [
         [None, None, None],

@@ -67,16 +67,20 @@ async def create_game(
         id=game_id,
         state=GameStates.PLAYER_WAITING,
         participants=[user_id],
+        current_player=user_id,
     )
 
-    await game_db.set(game_id, new_game.json())
-    await context.bot.send_message(
+    message = await context.bot.send_message(
         chat_id=chat_id,
         text=dedent(f"""
             ID игры: {game_id}
         """),
         reply_markup=get_field_buttons(new_game.field)
     )
+    new_game.participants_messages_ids.add(message.id)
+    await game_db.set(game_id, new_game.json())
+    await user_db.set(user_id, new_game.id)  # type: ignore
+
     return States.IN_GAME
     
 
@@ -100,7 +104,7 @@ async def join_game(
         game_id = update.effective_message.text  # type: ignore
         user_game_id = await user_db.get(user_id)  # type: ignore
 
-        if user_game_id  and user_game_id != game_id:
+        if user_game_id and user_game_id != game_id:
             await update.message.reply_text(
                 f'У вас уже есть игра: {user_game_id}'
             )
@@ -122,15 +126,19 @@ async def join_game(
         
         if user_id not in game.participants:
             game.participants.append(user_id)
-            
-        await game_db.set(game_id, game.json())
-        await user_db.set(user_id, game.id)  # type: ignore
 
-        await context.bot.send_message(
+        await user_db.set(user_id, game.id)  # type: ignore
+        message = await context.bot.send_message(
             chat_id=chat_id,
-            text='Вы присоединились к игре!',
+            text=dedent(f"""\
+                Вы присоединилсь к игре: {game_id}
+                Текущий ход у пользователя: {game.current_player}
+            """),
             reply_markup=get_field_buttons(game.field)
         )
+        game.participants_messages_ids.add(message.id)
+        await game_db.set(game_id, game.json())
+
         return States.IN_GAME
         
 
