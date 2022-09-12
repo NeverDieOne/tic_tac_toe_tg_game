@@ -4,10 +4,9 @@ from textwrap import dedent
 
 from environs import Env
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    Application, CommandHandler, ContextTypes,
-    ConversationHandler, CallbackQueryHandler, MessageHandler, filters
-)
+from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
+                          ContextTypes, ConversationHandler, MessageHandler,
+                          filters)
 
 logger = logging.getLogger(__name__)
 
