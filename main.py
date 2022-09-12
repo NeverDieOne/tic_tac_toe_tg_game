@@ -96,8 +96,9 @@ async def join_game(
         return States.JOIN_GAME
     else:
         game_id = update.effective_message.text  # type: ignore
+        user_game_id = await user_db.get(user_id)  # type: ignore
 
-        if user_game_id := await user_db.get(user_id) and user_game_id != game_id:  # type: ignore
+        if user_game_id  and user_game_id != game_id:
             await update.message.reply_text(
                 f'У вас уже есть игра: {user_game_id}'
             )
@@ -126,7 +127,6 @@ async def join_game(
         await update.message.reply_text(
             'Вы присоединились к игре!'
         )
-
         return States.IN_GAME
         
 
