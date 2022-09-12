@@ -24,6 +24,9 @@ python main.py
 
 ```text
 TELEGRAM_BOT_TOKEN='токен телеграм бота, можно получить у BotFather'
+REDIS_HOST='хост для подключения к редису'
+REDIS_PORT='порт для подключения к редису'
+REDIS_DB='номер БД в редисе'
 ```
 
 ## IN PROGRESS

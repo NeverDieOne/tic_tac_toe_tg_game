@@ -8,6 +8,10 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, ConversationHandler, MessageHandler,
                           filters)
 
+from game import Game, GameStates
+from aioredis import Redis
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,6 +71,13 @@ def main() -> None:
 
     env = Env()
     env.read_env()
+
+    redis = Redis(
+        host=env.str('REDIS_HOST'),
+        port=env.int('REDIS_PORT'),
+        db=env.int('REDIS_DB'),
+        decode_responses=True,
+    )
 
     application = Application.builder().token(env.str('TELEGRAM_BOT_TOKEN')).build()
 
