@@ -162,3 +162,4 @@ cython_debug/
 # VSCode settings
 .vscode
 .python-version
+*.pickle

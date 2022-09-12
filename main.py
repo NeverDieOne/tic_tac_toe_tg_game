@@ -9,7 +9,7 @@ from environs import Env
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, ConversationHandler, MessageHandler,
-                          filters)
+                          filters, PicklePersistence, PersistenceInput)
 
 from game import Game, GameStates
 from field import get_field_buttons
@@ -88,7 +88,7 @@ async def create_game(
             ID игры: {game_id}
             Текущий ход у вас
         """),
-        reply_markup=get_field_buttons(new_game.field)
+        reply_markup=InlineKeyboardMarkup(get_field_buttons(new_game.field))
     )
 
     new_game.participants_messages_ids.add((message_id, chat_id))
@@ -157,10 +157,17 @@ async def join_game(
         
         if user_id not in game.participants:
             game.participants.append(user_id)
+            game.participants_messages_ids.add((message_id, chat_id))
 
         await user_db.set(f'{user_id}_game', game.id)
-
         current_move = 'у вас' if game.current_player == chat_id else 'у соперника'
+
+        buttons = get_field_buttons(game.field)
+        if game.state == GameStates.FINISHED:
+            buttons += [[InlineKeyboardButton(
+                'Выйти в меню', callback_data='back_to_menu'
+            )]]
+
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -168,12 +175,10 @@ async def join_game(
                 Вы присоединилсь к игре: {game_id}
                 Текущий ход: {current_move}
             """),
-            reply_markup=get_field_buttons(game.field)
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-        game.participants_messages_ids.add((message_id, chat_id))
         await game_db.set(game_id, game.json())
-
         return States.IN_GAME
 
     
@@ -214,6 +219,11 @@ async def make_move(
     if game.is_winner(symbol):
         for message_id, chat_id in game.participants_messages_ids:
             winner = 'вы' if game.current_player == chat_id else 'ваш соперник'
+            buttons = get_field_buttons(game.field)
+            buttons += [[InlineKeyboardButton(
+                'Выйти в меню', callback_data='back_to_menu'
+            )]]
+
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -221,11 +231,7 @@ async def make_move(
                     ID игры: {game_id}
                     Победил: {winner}
                 """),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        'Выйти в меню', callback_data='back_to_menu'
-                    )
-                ]])
+                reply_markup=InlineKeyboardMarkup(buttons)
             )
             game.state = GameStates.FINISHED
             await game_db.set(game_id, game.json())
@@ -238,7 +244,7 @@ async def make_move(
     await game_db.set(game_id, game.json())
 
     for message_id, chat_id in game.participants_messages_ids:
-        current_move = 'у вас' if game.current_player == chat_id else 'у соперника'
+        current_move = 'вы' if game.current_player == chat_id else 'соперник'
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -246,10 +252,34 @@ async def make_move(
                 ID игры: {game_id}
                 Текущий ход: {current_move}
             """),
-            reply_markup=get_field_buttons(game.field)
+            reply_markup=InlineKeyboardMarkup(get_field_buttons(game.field))
         )
 
     return States.IN_GAME
+
+
+async def remove_game(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> States:
+    user_db: Redis = context.bot_data['user_db']
+    user_id = update.effective_user.id  # type: ignore
+    chat_id = update.effective_chat.id  # type: ignore
+
+    await user_db.delete(f'{user_id}_game')
+    message = await context.bot.send_message(
+        chat_id=chat_id,
+        text='Выбирай что хочешь сделать:',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton('Создать игру', callback_data='new_game')],
+            [InlineKeyboardButton(
+                'Подключиться к игре', callback_data='connect_to_game'
+            )]
+        ])
+    )
+
+    context.user_data['message_id'] = message.id  # type: ignore
+    return States.MENU
         
 
 async def flush_db(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -269,7 +299,9 @@ def main() -> None:
     env = Env()
     env.read_env()
 
-    application = Application.builder().token(env.str('TELEGRAM_BOT_TOKEN')).build()
+    builder = Application.builder()
+    application = builder.token(env.str('TELEGRAM_BOT_TOKEN')).build()
+
     application.bot_data['game_db'] = Redis(
         host=env.str('REDIS_HOST'),
         port=env.int('REDIS_PORT'),
@@ -284,6 +316,10 @@ def main() -> None:
         decode_responses=True,
     )
 
+    application.persistence = PicklePersistence(
+        filepath='db.pickle',
+        store_data=PersistenceInput(bot_data=False)
+    )
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -293,14 +329,16 @@ def main() -> None:
             ],
             States.IN_GAME: [
                 CallbackQueryHandler(make_move, r'\d{2}'),
-                CallbackQueryHandler(start, 'back_to_menu')
+                CallbackQueryHandler(remove_game, 'back_to_menu')
             ],
             States.JOIN_GAME: [
                 MessageHandler(filters.TEXT, join_game)
             ]
         },
         fallbacks=[],
-        allow_reentry=True
+        allow_reentry=True,
+        persistent=True,
+        name='game_conversation'
     )
     
     application.add_handler(CommandHandler('flush', flush_db))

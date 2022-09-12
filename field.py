@@ -1,7 +1,9 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton
 
 
-def get_field_buttons(fields: list[list[str | None]]) -> InlineKeyboardMarkup:
+def get_field_buttons(
+    fields: list[list[str | None]]
+) -> list[list[InlineKeyboardButton]]:
     markup: list[list[InlineKeyboardButton]] = []
 
     for row_index, row in enumerate(fields):
@@ -14,4 +16,4 @@ def get_field_buttons(fields: list[list[str | None]]) -> InlineKeyboardMarkup:
             ))
         
         markup.append(row_buttons)
-    return InlineKeyboardMarkup(markup)    
+    return markup    
