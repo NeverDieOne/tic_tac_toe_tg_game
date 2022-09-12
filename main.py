@@ -42,14 +42,19 @@ async def create_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    pass
+    await update.callback_query.answer()
+    logger.info('In create game')
+    return States.MENU
     
 
 async def join_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    pass
+    await update.callback_query.answer()
+    logger.info('In join game')
+    return States.MENU
+    
 
 
 def main() -> None:
