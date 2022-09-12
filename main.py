@@ -12,6 +12,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           filters)
 
 from game import Game, GameStates
+from field import get_field_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,8 @@ async def create_game(
         chat_id=chat_id,
         text=dedent(f"""
             ID игры: {game_id}
-        """)
+        """),
+        reply_markup=get_field_buttons(new_game.field)
     )
     return States.IN_GAME
     
@@ -124,8 +126,10 @@ async def join_game(
         await game_db.set(game_id, game.json())
         await user_db.set(user_id, game.id)  # type: ignore
 
-        await update.message.reply_text(
-            'Вы присоединились к игре!'
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text='Вы присоединились к игре!',
+            reply_markup=get_field_buttons(game.field)
         )
         return States.IN_GAME
         
