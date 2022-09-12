@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from enum import Enum, auto
 from textwrap import dedent
@@ -104,6 +105,9 @@ def main() -> None:
     
     application.add_handler(conv_handler)
     application.run_polling()
+
+    asyncio.run(application.bot_data['user_db'].close())
+    asyncio.run(application.bot_data['game_db'].close())
 
 
 if __name__ == '__main__':
