@@ -6,7 +6,7 @@ from environs import Env
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
-    ConversationHandler, CallbackQueryHandler
+    ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 )
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class States(Enum):
     MENU = auto()
     IN_GAME = auto()
+    JOIN_GAME = auto()
 
 
 async def start(
@@ -40,19 +41,23 @@ async def create_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    await update.callback_query.answer()
     logger.info('In create game')
-    return States.MENU
+    return States.IN_GAME
     
 
 async def join_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    await update.callback_query.answer()
-    logger.info('In join game')
-    return States.MENU
-    
+    if update.callback_query:
+        await context.bot.send_message(
+            text='Введите ID игры для подключения',
+            chat_id=update.effective_chat.id  # type: ignore
+        )
+        return States.JOIN_GAME
+    else:
+        logger.info('In join game')
+        return States.IN_GAME
 
 
 def main() -> None:
@@ -73,7 +78,10 @@ def main() -> None:
                 CallbackQueryHandler(create_game, pattern='new_game'),
                 CallbackQueryHandler(join_game, pattern='connect_to_game')
             ],
-            States.IN_GAME: []
+            States.IN_GAME: [],
+            States.JOIN_GAME: [
+                MessageHandler(filters.TEXT, join_game)
+            ]
         },
         fallbacks=[]
     )
