@@ -27,7 +27,7 @@ async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    await update.message.reply_text(
+    message = await update.message.reply_text(
         text=dedent("""\
             Приветствую тебя в игре крестики-нолики.
             Ты хочешь создать новую игру или подключиться к существующей?
@@ -39,6 +39,7 @@ async def start(
             )]
         ])
     )
+    context.user_data.update({'message_id': message.id})  # type: ignore
     return States.MENU
 
 
@@ -51,14 +52,24 @@ async def create_game(
 
     user_id = update.effective_user.id  # type: ignore
     chat_id = update.effective_chat.id  # type: ignore
+    message_id = context.user_data['message_id']  # type: ignore
     
     if game_id := await user_db.get(user_id):  # type: ignore
-        await context.bot.send_message(
+        await context.bot.edit_message_text(
             chat_id=chat_id,
+            message_id=message_id,
             text=dedent(f"""\
                 Вы уже находитесь в игре: {game_id}
                 Присоединяйтесь к ней!
             """)
+        )
+        await context.bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                'Подключиться к игре',
+                callback_data='connect_to_game')
+            ]])
         )
         return States.MENU
     
@@ -70,16 +81,23 @@ async def create_game(
         current_player=user_id,
     )
 
-    message = await context.bot.send_message(
+    await context.bot.edit_message_text(
         chat_id=chat_id,
+        message_id=message_id,
         text=dedent(f"""
             ID игры: {game_id}
+            Текущий ход у вас
         """),
+    )
+    await context.bot.edit_message_reply_markup(
+        chat_id=chat_id,
+        message_id=message_id,
         reply_markup=get_field_buttons(new_game.field)
     )
-    new_game.participants_messages_ids.add(message.id)
+
+    new_game.participants_messages_ids.add(message_id)
     await game_db.set(game_id, new_game.json())
-    await user_db.set(user_id, new_game.id)  # type: ignore
+    await user_db.set(f'{user_id}_game', new_game.id)
 
     return States.IN_GAME
     
@@ -93,10 +111,12 @@ async def join_game(
 
     user_id = update.effective_user.id  # type: ignore
     chat_id = update.effective_chat.id  # type: ignore
+    message_id = context.user_data['message_id']  # type: ignore
 
     if update.callback_query:
-        await context.bot.send_message(
+        await context.bot.edit_message_text(
             text='Введите ID игры для подключения',
+            message_id=message_id,
             chat_id=chat_id
         )
         return States.JOIN_GAME
@@ -105,41 +125,78 @@ async def join_game(
         user_game_id = await user_db.get(user_id)  # type: ignore
 
         if user_game_id and user_game_id != game_id:
-            await update.message.reply_text(
-                f'У вас уже есть игра: {user_game_id}'
+            await context.bot.edit_message_text(
+                text=f'У вас уже есть игра: {user_game_id}',
+                message_id=message_id,
+                chat_id=chat_id
+            )
+            await context.bot.edit_message_reply_markup(
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                    'Подключиться к игре',
+                    callback_data='connect_to_game')
+                ]])
             )
             return States.JOIN_GAME
+        
+        await context.bot.delete_message(
+            chat_id=chat_id,
+            message_id=update.effective_message.id  # type: ignore
+        )
 
         game_info = await game_db.get(game_id)
         if not game_info:
-            await update.message.reply_text(
-                f'Игры с ID {game_id} не существует'
+            await context.bot.edit_message_text(
+                text=f'Игры с ID {game_id} не существует, введите другой ID',
+                message_id=message_id,
+                chat_id=chat_id
             )
             return States.JOIN_GAME
         
         game = Game(**json.loads(game_info))
         if len(game.participants) == 2 and user_id not in game.participants:
-            await update.message.reply_text(
-                'В игре уже достаточно игроков, вы не можете присоединиться'
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text='В игре уже достаточно игроков, вы не можете присоединиться'
             )
             return States.JOIN_GAME
         
         if user_id not in game.participants:
             game.participants.append(user_id)
 
-        await user_db.set(user_id, game.id)  # type: ignore
-        message = await context.bot.send_message(
+        await user_db.set(f'{user_id}_game', game.id)
+
+        current_move = 'у вас' if game.current_player == user_id else 'у соперника' 
+        await context.bot.edit_message_text(
             chat_id=chat_id,
+            message_id=message_id,
             text=dedent(f"""\
                 Вы присоединилсь к игре: {game_id}
-                Текущий ход у пользователя: {game.current_player}
-            """),
+                Текущий ход: {current_move}
+            """)
+        )
+        await context.bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
             reply_markup=get_field_buttons(game.field)
         )
-        game.participants_messages_ids.add(message.id)
+
+        game.participants_messages_ids.add(message_id)
         await game_db.set(game_id, game.json())
 
         return States.IN_GAME
+
+    
+async def make_move(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> States:
+
+    logger.info(update.callback_query)
+    logger.info('User make move')
+    return States.IN_GAME
         
 
 async def flush_db(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -181,7 +238,9 @@ def main() -> None:
                 CallbackQueryHandler(create_game, pattern='new_game'),
                 CallbackQueryHandler(join_game, pattern='connect_to_game')
             ],
-            States.IN_GAME: [],
+            States.IN_GAME: [
+                CallbackQueryHandler(make_move, r'\d{2}')
+            ],
             States.JOIN_GAME: [
                 MessageHandler(filters.TEXT, join_game)
             ]
