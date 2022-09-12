@@ -21,19 +21,17 @@ async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    greeteing_text = dedent("""\
-        Приветствую тебя в игре крестики-нолики.
-        Ты хочешь создать новую игру или подключиться к существующей?
-    """)
-    markup = [
-        [InlineKeyboardButton('Создать игру', callback_data='new_game')],
-        [InlineKeyboardButton(
-            'Подключиться к игре', callback_data='connect_to_game'
-        )]
-    ]
     await update.message.reply_text(
-        text=greeteing_text,
-        reply_markup=InlineKeyboardMarkup(markup)
+        text=dedent("""\
+            Приветствую тебя в игре крестики-нолики.
+            Ты хочешь создать новую игру или подключиться к существующей?
+        """),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton('Создать игру', callback_data='new_game')],
+            [InlineKeyboardButton(
+                'Подключиться к игре', callback_data='connect_to_game'
+            )]
+        ])
     )
     return States.MENU
 
