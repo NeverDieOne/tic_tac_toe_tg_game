@@ -11,15 +11,19 @@ class GameStates(Enum):
 
 
 class Game(BaseModel):
-    _id: int
+    id: int
     state: GameStates
     participants: list[int] = []
-    current_player: int | None
-    field: list[list[str | None]]
+    current_player: int | None = None
+    field: list[list[str | None]] = [
+        [None, None, None],
+        [None, None, None],
+        [None, None, None]
+    ]
 
     @validator('participants')
     def participants_len(cls, v: list[int]) -> list[int]:
-        if len(v) != 2:
+        if len(v) > 2:
             raise ValueError('Game can contain only 2 participants')
         return v
     
@@ -30,6 +34,6 @@ class Game(BaseModel):
         values: dict[Any, Any],
         **kwargs: dict[Any, Any]
     ) -> int:
-        if 'participants' in values and v not in values['participants']:
+        if v and 'participants' in values and v not in values['participants']:
             raise ValueError('Only participant can be a player')
         return v

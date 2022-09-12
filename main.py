@@ -1,8 +1,10 @@
 import asyncio
+import json
 import logging
 from enum import Enum, auto
 from textwrap import dedent
 
+from aioredis import Redis
 from environs import Env
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
@@ -10,8 +12,6 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           filters)
 
 from game import Game, GameStates
-from aioredis import Redis
-
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,36 @@ async def create_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    # Some logic to create game
+    user_db: Redis = context.bot_data['user_db']
+    game_db: Redis = context.bot_data['game_db']
+
+    user_id = update.effective_user.id  # type: ignore
+    chat_id = update.effective_chat.id  # type: ignore
+    
+    if game_id := await user_db.get(user_id):  # type: ignore
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=dedent(f"""\
+                Вы уже находитесь в игре: {game_id}
+                Присоединяйтесь к ней!
+            """)
+        )
+        return States.MENU
+    
+    game_id = await game_db.incr('_id')
+    new_game = Game(
+        id=game_id,
+        state=GameStates.PLAYER_WAITING,
+        participants=[user_id],
+    )
+
+    await game_db.set(game_id, new_game.json())
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=dedent(f"""
+            ID игры: {game_id}
+        """)
+    )
     return States.IN_GAME
     
 
@@ -53,15 +82,60 @@ async def join_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
+    game_db: Redis = context.bot_data['game_db']
+    user_db: Redis = context.bot_data['user_db']
+
+    user_id = update.effective_user.id  # type: ignore
+    chat_id = update.effective_chat.id  # type: ignore
+
     if update.callback_query:
         await context.bot.send_message(
             text='Введите ID игры для подключения',
-            chat_id=update.effective_chat.id  # type: ignore
+            chat_id=chat_id
         )
         return States.JOIN_GAME
     else:
-        logger.info('In join game')
+        game_id = update.effective_message.text  # type: ignore
+
+        if user_game_id := await user_db.get(user_id) and user_game_id != game_id:  # type: ignore
+            await update.message.reply_text(
+                f'У вас уже есть игра: {user_game_id}'
+            )
+            return States.JOIN_GAME
+
+        game_info = await game_db.get(game_id)
+        if not game_info:
+            await update.message.reply_text(
+                f'Игры с ID {game_id} не существует'
+            )
+            return States.JOIN_GAME
+        
+        game = Game(**json.loads(game_info))
+        if len(game.participants) == 2 and user_id not in game.participants:
+            await update.message.reply_text(
+                'В игре уже достаточно игроков, вы не можете присоединиться'
+            )
+            return States.JOIN_GAME
+        
+        if user_id not in game.participants:
+            game.participants.append(user_id)
+            
+        await game_db.set(game_id, game.json())
+        await user_db.set(user_id, game.id)  # type: ignore
+
+        await update.message.reply_text(
+            'Вы присоединились к игре!'
+        )
+
         return States.IN_GAME
+        
+
+async def flush_db(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_db: Redis = context.bot_data['user_db']
+    game_db: Redis = context.bot_data['game_db']
+
+    await user_db.flushdb()
+    await game_db.flushdb()
 
 
 def main() -> None:
@@ -100,9 +174,11 @@ def main() -> None:
                 MessageHandler(filters.TEXT, join_game)
             ]
         },
-        fallbacks=[]
+        fallbacks=[],
+        allow_reentry=True
     )
     
+    application.add_handler(CommandHandler('flush', flush_db))
     application.add_handler(conv_handler)
     application.run_polling()
 
