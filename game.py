@@ -15,6 +15,7 @@ class Game(BaseModel):
     state: GameStates
     participants: list[int] = []
     current_player: int | None
+    field: list[list[str | None]]
 
     @validator('participants')
     def participants_len(cls, v: list[int]) -> list[int]:
