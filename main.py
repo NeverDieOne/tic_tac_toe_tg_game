@@ -1,15 +1,13 @@
-import asyncio
 import json
 import logging
 from enum import Enum, auto
 from textwrap import dedent
 
-from aioredis import Redis
 from environs import Env
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, ConversationHandler, MessageHandler,
-                          filters, PicklePersistence, PersistenceInput)
+                          filters, PicklePersistence)
 
 from game import Game, GameStates
 from field import get_field_buttons
@@ -47,14 +45,11 @@ async def create_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    user_db: Redis = context.bot_data['user_db']
-    game_db: Redis = context.bot_data['game_db']
-
     user_id = update.effective_user.id  # type: ignore
     chat_id = update.effective_chat.id  # type: ignore
     message_id = context.user_data['message_id']  # type: ignore
     
-    if game_id := await user_db.get(f'{user_id}_game'):
+    if game_id := context.user_data.get('current_game_id'):  # type: ignore
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -73,7 +68,9 @@ async def create_game(
         )
         return States.MENU
     
-    game_id = await game_db.incr('_id')
+    last_game_id = context.bot_data.get('_id') or 0
+    game_id = last_game_id + 1
+    context.bot_data['_id'] = game_id
     new_game = Game(
         id=game_id,
         state=GameStates.PLAYER_WAITING,
@@ -92,8 +89,8 @@ async def create_game(
     )
 
     new_game.participants_messages_ids.add((message_id, chat_id))
-    await game_db.set(game_id, new_game.json())
-    await user_db.set(f'{user_id}_game', new_game.id)
+    context.bot_data[game_id] = new_game.json()
+    context.user_data['current_game_id'] = new_game.id  # type: ignore
 
     return States.IN_GAME
     
@@ -102,9 +99,6 @@ async def join_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    game_db: Redis = context.bot_data['game_db']
-    user_db: Redis = context.bot_data['user_db']
-
     user_id = update.effective_user.id  # type: ignore
     chat_id = update.effective_chat.id  # type: ignore
     message_id = context.user_data['message_id']  # type: ignore
@@ -117,8 +111,8 @@ async def join_game(
         )
         return States.JOIN_GAME
     else:
-        game_id = update.effective_message.text  # type: ignore
-        user_game_id = await user_db.get(user_id)  # type: ignore
+        game_id = int(update.effective_message.text)  # type: ignore
+        user_game_id = context.user_data.get('current_game_id')  # type: ignore
 
         if user_game_id and user_game_id != game_id:
             await context.bot.edit_message_text(
@@ -137,7 +131,7 @@ async def join_game(
             message_id=update.effective_message.id  # type: ignore
         )
 
-        game_info = await game_db.get(game_id)
+        game_info = context.bot_data[game_id]
         if not game_info:
             await context.bot.edit_message_text(
                 text=f'Игры с ID {game_id} не существует, введите другой ID',
@@ -159,7 +153,7 @@ async def join_game(
             game.participants.append(user_id)
             game.participants_messages_ids.add((message_id, chat_id))
 
-        await user_db.set(f'{user_id}_game', game.id)
+        context.user_data['current_game_id'] = game.id  # type: ignore
         current_move = 'у вас' if game.current_player == chat_id else 'у соперника'
 
         buttons = get_field_buttons(game.field)
@@ -178,7 +172,7 @@ async def join_game(
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
-        await game_db.set(game_id, game.json())
+        context.bot_data[game_id] = game.json()
         return States.IN_GAME
 
     
@@ -186,15 +180,12 @@ async def make_move(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    user_db: Redis = context.bot_data['user_db']
-    game_db: Redis = context.bot_data['game_db']
-
     user_id = update.effective_user.id  # type: ignore
     chat_id = update.effective_chat.id  # type: ignore
     message_id = context.user_data['message_id']  # type: ignore
 
-    game_id = await user_db.get(f'{user_id}_game')
-    game: Game = Game(**json.loads(await game_db.get(game_id)))
+    game_id = context.user_data.get('current_game_id')  # type: ignore
+    game: Game = Game(**json.loads(context.bot_data[game_id]))
 
     if game.state == GameStates.FINISHED:
         await update.callback_query.answer('Игра окончена')
@@ -234,14 +225,13 @@ async def make_move(
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
             game.state = GameStates.FINISHED
-            await game_db.set(game_id, game.json())
+            context.bot_data[game_id] = game.json()
         return States.IN_GAME
 
     next_player = [p for p in game.participants if p != user_id][0]
     game.current_player = next_player
     game.state = GameStates.IN_PROGRESS
-
-    await game_db.set(game_id, game.json())
+    context.bot_data[game_id] = game.json()
 
     for message_id, chat_id in game.participants_messages_ids:
         current_move = 'вы' if game.current_player == chat_id else 'соперник'
@@ -262,11 +252,10 @@ async def remove_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    user_db: Redis = context.bot_data['user_db']
-    user_id = update.effective_user.id  # type: ignore
     chat_id = update.effective_chat.id  # type: ignore
+    await update.callback_query.answer()
 
-    await user_db.delete(f'{user_id}_game')
+    del context.user_data['current_game_id']  # type: ignore
     message = await context.bot.send_message(
         chat_id=chat_id,
         text='Выбирай что хочешь сделать:',
@@ -280,14 +269,6 @@ async def remove_game(
 
     context.user_data['message_id'] = message.id  # type: ignore
     return States.MENU
-        
-
-async def flush_db(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_db: Redis = context.bot_data['user_db']
-    game_db: Redis = context.bot_data['game_db']
-
-    await user_db.flushdb()
-    await game_db.flushdb()
 
 
 def main() -> None:
@@ -302,23 +283,8 @@ def main() -> None:
     builder = Application.builder()
     application = builder.token(env.str('TELEGRAM_BOT_TOKEN')).build()
 
-    application.bot_data['game_db'] = Redis(
-        host=env.str('REDIS_HOST'),
-        port=env.int('REDIS_PORT'),
-        db=env.int('REDIS_DB_GAME'),
-        decode_responses=True,
-    )
-
-    application.bot_data['user_db'] = Redis(
-        host=env.str('REDIS_HOST'),
-        port=env.int('REDIS_PORT'),
-        db=env.int('REDIS_DB_USER'),
-        decode_responses=True,
-    )
-
     application.persistence = PicklePersistence(
-        filepath='db.pickle',
-        store_data=PersistenceInput(bot_data=False)
+        filepath='db.pickle'
     )
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
@@ -340,13 +306,9 @@ def main() -> None:
         persistent=True,
         name='game_conversation'
     )
-    
-    application.add_handler(CommandHandler('flush', flush_db))
+
     application.add_handler(conv_handler)
     application.run_polling()
-
-    asyncio.run(application.bot_data['user_db'].close())
-    asyncio.run(application.bot_data['game_db'].close())
 
 
 if __name__ == '__main__':
