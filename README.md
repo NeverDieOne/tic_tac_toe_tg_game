@@ -24,10 +24,6 @@ python main.py
 
 ```text
 TELEGRAM_BOT_TOKEN='токен телеграм бота, можно получить у BotFather'
-REDIS_HOST='хост для подключения к редису'
-REDIS_PORT='порт для подключения к редису'
-REDIS_DB_USER='номер БД в редисе для пользователей'
-REDIS_DB_GAME='номер БД в редисе для игр'
 ```
 
 ## Запуск с помощью Dockerfile
