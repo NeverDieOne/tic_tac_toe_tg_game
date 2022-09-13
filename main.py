@@ -9,7 +9,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, ConversationHandler, MessageHandler,
                           filters, PicklePersistence)
 
-from game import Game, GameStates
+from game import Game, GameStates, message_template
 from field import get_field_buttons
 
 logger = logging.getLogger(__name__)
@@ -54,8 +54,8 @@ async def create_game(
             chat_id=chat_id,
             message_id=message_id,
             text=dedent(f"""\
-                Вы уже находитесь в игре: {game_id}
-                Присоединяйтесь к ней!
+                Ты уже находишься в игре: {game_id}
+                Присоединяйся к ней!
             """)
         )
         await context.bot.edit_message_reply_markup(
@@ -81,10 +81,7 @@ async def create_game(
     await context.bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
-        text=dedent(f"""
-            ID игры: {game_id}
-            Текущий ход у вас
-        """),
+        text=message_template.format(game_id, 'ты', new_game.state.value, ''),
         reply_markup=InlineKeyboardMarkup(get_field_buttons(new_game.field))
     )
 
@@ -105,7 +102,7 @@ async def join_game(
 
     if update.callback_query:
         await context.bot.edit_message_text(
-            text='Введите ID игры для подключения',
+            text='Введи ID игры для подключения',
             message_id=message_id,
             chat_id=chat_id
         )
@@ -116,7 +113,7 @@ async def join_game(
 
         if user_game_id and user_game_id != game_id:
             await context.bot.edit_message_text(
-                text=f'У вас уже есть игра: {user_game_id}',
+                text=f'У тебя уже есть игра: {user_game_id}',
                 message_id=message_id,
                 chat_id=chat_id,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
@@ -131,12 +128,15 @@ async def join_game(
             message_id=update.effective_message.id  # type: ignore
         )
 
-        game_info = context.bot_data[game_id]
+        game_info = context.bot_data.get(game_id)
         if not game_info:
             await context.bot.edit_message_text(
-                text=f'Игры с ID {game_id} не существует, введите другой ID',
+                text=f'Игры с ID {game_id} не существует, введи другой ID',
                 message_id=message_id,
-                chat_id=chat_id
+                chat_id=chat_id,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                    text='Создать игру', callback_data='new_game'
+                )]])
             )
             return States.JOIN_GAME
         
@@ -145,16 +145,30 @@ async def join_game(
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
-                text='В игре уже достаточно игроков, вы не можете присоединиться'
+                text='В игре уже достаточно игроков, ты не можешь присоединиться',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                    text='Создать игру', callback_data='new_game'
+                )]])
+            )
+            return States.JOIN_GAME
+
+        if game.state == GameStates.FINISHED:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text='Игра завершена. Ты не можешь к ней присоединиться',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                    text='Создать игру', callback_data='new_game'
+                )]])
             )
             return States.JOIN_GAME
         
         if user_id not in game.participants:
             game.participants.append(user_id)
             game.participants_messages_ids.add((message_id, chat_id))
+            game.state = GameStates.IN_PROGRESS
 
         context.user_data['current_game_id'] = game.id  # type: ignore
-        current_move = 'у вас' if game.current_player == chat_id else 'у соперника'
 
         buttons = get_field_buttons(game.field)
         if game.state == GameStates.FINISHED:
@@ -162,15 +176,16 @@ async def join_game(
                 'Выйти в меню', callback_data='back_to_menu'
             )]]
 
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=dedent(f"""\
-                Вы присоединилсь к игре: {game_id}
-                Текущий ход: {current_move}
-            """),
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        for message_id, chat_id in game.participants_messages_ids:
+            current_move = 'ты' if game.current_player == chat_id else 'соперник'
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=message_template.format(
+                    game_id, current_move, game.state.value, ''
+                ),
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
 
         context.bot_data[game_id] = game.json()
         return States.IN_GAME
@@ -192,11 +207,11 @@ async def make_move(
         return States.IN_GAME
 
     if len(game.participants) != 2:
-        await update.callback_query.answer('Вы не можете начать игру один!')
+        await update.callback_query.answer('Ты не можете начать игру один!')
         return States.IN_GAME
 
     if game.current_player != user_id:
-        await update.callback_query.answer('Сейчас не ваш ход')
+        await update.callback_query.answer('Сейчас не твой ход')
         return States.IN_GAME
     
     row, button = [int(_) for _ in list(update.callback_query.data)]
@@ -209,7 +224,7 @@ async def make_move(
     game.set_sell(row, button, symbol)
     if game.is_winner(symbol):
         for message_id, chat_id in game.participants_messages_ids:
-            winner = 'вы' if game.current_player == chat_id else 'ваш соперник'
+            winner = 'ты' if game.current_player == chat_id else 'твой соперник'
             buttons = get_field_buttons(game.field)
             buttons += [[InlineKeyboardButton(
                 'Выйти в меню', callback_data='back_to_menu'
@@ -218,10 +233,9 @@ async def make_move(
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
-                text=dedent(f"""\
-                    ID игры: {game_id}
-                    Победил: {winner}
-                """),
+                text=message_template.format(
+                    game_id, '', game.state.value, winner
+                ),
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
             game.state = GameStates.FINISHED
@@ -234,14 +248,13 @@ async def make_move(
     context.bot_data[game_id] = game.json()
 
     for message_id, chat_id in game.participants_messages_ids:
-        current_move = 'вы' if game.current_player == chat_id else 'соперник'
+        current_move = 'ты' if game.current_player == chat_id else 'соперник'
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
-            text=dedent(f"""\
-                ID игры: {game_id}
-                Текущий ход: {current_move}
-            """),
+            text=message_template.format(
+                game_id, current_move, game.state.value, ''
+            ),
             reply_markup=InlineKeyboardMarkup(get_field_buttons(game.field))
         )
 
@@ -252,9 +265,9 @@ async def remove_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    chat_id = update.effective_chat.id  # type: ignore
     await update.callback_query.answer()
-
+    chat_id = update.effective_chat.id  # type: ignore
+    
     del context.user_data['current_game_id']  # type: ignore
     message = await context.bot.send_message(
         chat_id=chat_id,
@@ -298,7 +311,8 @@ def main() -> None:
                 CallbackQueryHandler(remove_game, 'back_to_menu')
             ],
             States.JOIN_GAME: [
-                MessageHandler(filters.TEXT, join_game)
+                MessageHandler(filters.TEXT, join_game),
+                CallbackQueryHandler(create_game, pattern='new_game')
             ]
         },
         fallbacks=[],

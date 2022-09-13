@@ -1,13 +1,21 @@
-from enum import Enum, auto
+from enum import Enum
+from textwrap import dedent
 from typing import Any
 
 from pydantic import BaseModel, validator
 
+message_template = dedent("""\
+    Game ID: {}
+    Текущий ход: {}
+    Статус игры: {}
+    Победитель: {}
+""")
+
 
 class GameStates(Enum):
-    PLAYER_WAITING = auto()
-    IN_PROGRESS = auto()
-    FINISHED = auto()
+    PLAYER_WAITING = 'ожидание игроков'
+    IN_PROGRESS = 'в процессе'
+    FINISHED = 'завершена'
 
 
 class Game(BaseModel):
