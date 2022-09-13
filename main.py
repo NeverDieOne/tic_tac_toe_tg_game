@@ -229,7 +229,7 @@ async def make_move(
 
     if game.is_winner(symbol) or game.state == GameStates.DRAW:
         for message_id, chat_id in game.participants_messages_ids:
-            if GameStates.DRAW:
+            if game.state == GameStates.DRAW:
                 winner = 'ничья'
             else:
                 winner = 'ты' if game.current_player == chat_id else 'твой соперник'
