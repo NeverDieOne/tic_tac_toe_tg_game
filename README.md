@@ -39,7 +39,7 @@ docker build -t tictac:latest .
 
 Запуск имейджа:
 ```console
-docker run --name=tictac --env-file={.env} --volume={data_path}:/app/data --restart=always
+docker run --name=tictac --env-file={.env} --volume={data_path}:/app/data --restart=always tictac:latest
 ```
 
 ## IN PROGRESS
