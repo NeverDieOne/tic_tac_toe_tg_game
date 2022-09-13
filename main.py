@@ -152,7 +152,7 @@ async def join_game(
             )
             return States.JOIN_GAME
 
-        if game.state == GameStates.FINISHED:
+        if game.state in [GameStates.FINISHED, GameStates.DRAW]:
             await context.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -202,7 +202,7 @@ async def make_move(
     game_id = context.user_data.get('current_game_id')  # type: ignore
     game: Game = Game(**json.loads(context.bot_data[game_id]))
 
-    if game.state == GameStates.FINISHED:
+    if game.state in [GameStates.FINISHED, GameStates.DRAW]:
         await update.callback_query.answer('Игра окончена')
         return States.IN_GAME
 
@@ -222,9 +222,18 @@ async def make_move(
     player_index = game.participants.index(user_id)
     symbol = 'O' if player_index else 'X'
     game.set_sell(row, button, symbol)
-    if game.is_winner(symbol):
+
+    if game.is_draw():
+        game.state = GameStates.DRAW
+
+    if game.is_winner(symbol) or game.state == GameStates.DRAW:
         for message_id, chat_id in game.participants_messages_ids:
-            winner = 'ты' if game.current_player == chat_id else 'твой соперник'
+            if GameStates.DRAW:
+                winner = 'ничья'
+            else:
+                winner = 'ты' if game.current_player == chat_id else 'твой соперник'
+                game.state = GameStates.FINISHED
+
             buttons = get_field_buttons(game.field)
             buttons += [[InlineKeyboardButton(
                 'Выйти в меню', callback_data='back_to_menu'
@@ -238,7 +247,6 @@ async def make_move(
                 ),
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
-            game.state = GameStates.FINISHED
             context.bot_data[game_id] = game.json()
         return States.IN_GAME
 
@@ -327,4 +335,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-

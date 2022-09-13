@@ -16,6 +16,7 @@ class GameStates(Enum):
     PLAYER_WAITING = 'ожидание игроков'
     IN_PROGRESS = 'в процессе'
     FINISHED = 'завершена'
+    DRAW = 'ничья'
 
 
 class Game(BaseModel):
@@ -65,3 +66,5 @@ class Game(BaseModel):
             set(self.field[2]) == set([symbol]),
         ])
          
+    def is_draw(self) -> bool:
+        return all([all(row) for row in self.field])
