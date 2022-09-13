@@ -30,6 +30,18 @@ REDIS_DB_USER='номер БД в редисе для пользователей
 REDIS_DB_GAME='номер БД в редисе для игр'
 ```
 
+## Запуск с помощью Dockerfile
+
+Сборка имейджа:
+```console
+docker build -t tictac:latest .
+```
+
+Запуск имейджа:
+```console
+docker run --name=tictac --env-file={.env} --volume={data_path}:/app/data --restart=always
+```
+
 ## IN PROGRESS
 
 - [X] Создание игры

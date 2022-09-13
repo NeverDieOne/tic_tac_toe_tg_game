@@ -1,16 +1,17 @@
 import json
 import logging
 from enum import Enum, auto
+from pathlib import Path
 from textwrap import dedent
 
 from environs import Env
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, ConversationHandler, MessageHandler,
-                          filters, PicklePersistence)
+                          PicklePersistence, filters)
 
-from game import Game, GameStates, message_template
 from field import get_field_buttons
+from game import Game, GameStates, message_template
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +298,8 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO
     )
+    data_path = Path('data')
+    data_path.mkdir(exist_ok=True)
 
     env = Env()
     env.read_env()
@@ -305,7 +308,7 @@ def main() -> None:
     application = builder.token(env.str('TELEGRAM_BOT_TOKEN')).build()
 
     application.persistence = PicklePersistence(
-        filepath='db.pickle'
+        filepath=data_path / 'db.pickle'
     )
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
