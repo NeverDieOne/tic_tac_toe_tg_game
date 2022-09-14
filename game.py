@@ -53,9 +53,6 @@ class Game(BaseModel):
             """)
 
         return message
-    
-    def is_cell_empty(self, row: int, button: int) -> bool:
-        return not self.field[row][button]
 
     def is_winner(self, symbol: str) -> bool: 
         return any([
