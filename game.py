@@ -14,7 +14,7 @@ class GameStates(Enum):
 class Player(BaseModel):
     user_id: int
     chat_id: int
-    message_id: int
+    message_id: int | None = None
     first_name: str
     symbol: str
 
