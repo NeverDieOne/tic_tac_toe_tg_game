@@ -1,15 +1,7 @@
 from enum import Enum
 from textwrap import dedent
-from typing import Any
 
 from pydantic import BaseModel, validator
-
-message_template = dedent("""\
-    Game ID: {}
-    Текущий ход: {}
-    Статус игры: {}
-    Победитель: {}
-""")
 
 
 class GameStates(Enum):
@@ -19,12 +11,20 @@ class GameStates(Enum):
     DRAW = 'ничья'
 
 
+class Player(BaseModel):
+    user_id: int
+    chat_id: int
+    message_id: int
+    first_name: str
+    symbol: str
+
+
 class Game(BaseModel):
     id: int
     state: GameStates
-    participants: list[int] = []
-    participants_messages_ids: set[tuple[int, int]] = set()
-    current_player: int | None = None
+    winner: str | None = None
+    current_player: Player
+    participants: list[Player] = []
     field: list[list[str | None]] = [
         [None, None, None],
         [None, None, None],
@@ -36,23 +36,17 @@ class Game(BaseModel):
         if len(v) > 2:
             raise ValueError('Game can contain only 2 participants')
         return v
-    
-    @validator('current_player')
-    def player_in_participants(
-        cls,
-        v: int,
-        values: dict[Any, Any],
-        **kwargs: dict[Any, Any]
-    ) -> int:
-        if v and 'participants' in values and v not in values['participants']:
-            raise ValueError('Only participant can be a player')
-        return v
+
+    def generate_message(self) -> str:
+        return dedent(f"""\
+            Game ID: {self.id}
+            Текущий ход: {self.current_player.first_name}
+            Статус игры: {self.state.value}
+            Победитель: {self.winner or ' '}
+        """)
     
     def is_cell_empty(self, row: int, button: int) -> bool:
         return not self.field[row][button]
-
-    def set_sell(self, row: int, button: int, symbol: str) -> None:
-        self.field[row][button] = symbol
 
     def is_winner(self, symbol: str) -> bool: 
         return any([
@@ -65,6 +59,3 @@ class Game(BaseModel):
             set(self.field[1]) == set([symbol]),
             set(self.field[2]) == set([symbol]),
         ])
-         
-    def is_draw(self) -> bool:
-        return all([all(row) for row in self.field])
