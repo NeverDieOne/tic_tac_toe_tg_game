@@ -40,7 +40,7 @@ docker run --name=tictac --env-file={.env} --volume={data_path}:/app/data --rest
 
 ## IN PROGRESS
 
-- [ ] Приглашение по deeplink
+- [ ] Обновление класса Game до более самостоятельного
 
 ## TODO
 
