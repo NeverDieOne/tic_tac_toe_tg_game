@@ -52,6 +52,7 @@ async def create_game(
     user_id = update.effective_user.id  # type: ignore
     first_name = update.effective_user.first_name  # type: ignore
     user_name = update.effective_user.username  # type: ignore
+    bot = await context.bot.get_me()
     
     if game_id := context.user_data.get('current_game_id'):  # type: ignore
         await context.bot.edit_message_text(
@@ -82,7 +83,8 @@ async def create_game(
         id=game_id,
         state=GameStates.PLAYER_WAITING,
         participants=[new_player],
-        current_player=new_player
+        current_player=new_player,
+        deeplink=f'https://t.me/{bot.username}?start={game_id}'
     )
 
     await context.bot.edit_message_text(
@@ -179,7 +181,7 @@ async def join_game(
             chat_id=chat_id,
             first_name=f'{first_name} ({user_name})',
             message_id=message_id,
-            symbol='O'
+            symbol='O' if game.participants else 'X'
         )
         if player.user_id not in [p.user_id for p in game.participants]:
             game.participants.append(player)
@@ -228,34 +230,20 @@ async def make_move(
 
     game.field[row][button] = game.current_player.symbol
 
-    if all([all(row) for row in game.field]):
+    is_draw = all([all(row) for row in game.field])
+    has_winner = game.is_winner(game.current_player.symbol)
+    if is_draw:
         game.winner = 'ничья'
         game.state = GameStates.DRAW
-    if game.is_winner(game.current_player.symbol):
+    if has_winner:
         game.winner = game.current_player.first_name
         game.state = GameStates.FINISHED
+    if not has_winner and not is_draw:
+        next_player = [p for p in game.participants if p.user_id != user_id][0]
+        game.current_player = next_player
+        game.state = GameStates.IN_PROGRESS
 
-    buttons = get_field_buttons(game.field)
-    if game.state in [GameStates.DRAW, GameStates.FINISHED]:
-        buttons += [[InlineKeyboardButton(
-            'Выйти в меню', callback_data='back_to_menu'
-        )]]
-
-        for player in game.participants:
-            await context.bot.edit_message_text(
-                chat_id=player.chat_id,
-                message_id=player.message_id,
-                text=game.generate_message(),
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-            context.bot_data[game_id] = game.json()
-        return States.IN_GAME
-
-    next_player = [p for p in game.participants if p.user_id != user_id][0]
-    game.current_player = next_player
-    game.state = GameStates.IN_PROGRESS
     context.bot_data[game_id] = game.json()
-
     for player in game.participants:
         await context.bot.edit_message_text(
             chat_id=player.chat_id,
@@ -271,10 +259,14 @@ async def remove_game(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> States:
-    await update.callback_query.answer()
     chat_id = update.effective_chat.id  # type: ignore
+    game_id = context.user_data['current_game_id']  # type: ignore
+    game: Game = Game(**json.loads(context.bot_data[game_id]))
     
-    del context.user_data['current_game_id']  # type: ignore
+    for player in game.participants.copy():
+        if player.chat_id == chat_id:
+            game.participants.remove(player)
+
     message = await context.bot.send_message(
         chat_id=chat_id,
         text='Выбирай что хочешь сделать:',
@@ -286,7 +278,9 @@ async def remove_game(
         ])
     )
 
+    del context.user_data['current_game_id']  # type: ignore
     context.user_data['message_id'] = message.id  # type: ignore
+
     return States.MENU
 
 

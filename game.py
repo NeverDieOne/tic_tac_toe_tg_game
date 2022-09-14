@@ -30,6 +30,7 @@ class Game(BaseModel):
         [None, None, None],
         [None, None, None]
     ]
+    deeplink: str
 
     @validator('participants')
     def participants_len(cls, v: list[int]) -> list[int]:
@@ -38,12 +39,20 @@ class Game(BaseModel):
         return v
 
     def generate_message(self) -> str:
-        return dedent(f"""\
+        message = dedent(f"""\
             Game ID: {self.id}
             Текущий ход: {self.current_player.first_name}
             Статус игры: {self.state.value}
             Победитель: {self.winner or ' '}
         """)
+
+        if len(self.participants) < 2:
+            message += dedent(f"""\
+                Пригласи друга:
+                {self.deeplink}
+            """)
+
+        return message
     
     def is_cell_empty(self, row: int, button: int) -> bool:
         return not self.field[row][button]

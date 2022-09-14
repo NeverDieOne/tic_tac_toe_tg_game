@@ -16,4 +16,9 @@ def get_field_buttons(
             ))
         
         markup.append(row_buttons)
-    return markup    
+
+    markup.append([
+        InlineKeyboardButton('Выйти из игры', callback_data='back_to_menu')
+    ])
+
+    return markup
