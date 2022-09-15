@@ -38,7 +38,7 @@ class Game(BaseModel):
             raise ValueError('Game can contain only 2 participants')
         return v
 
-    def generate_message(self) -> str:
+    def generate_message(self, additional_text: list[str] | None = None) -> str:
         message = dedent(f"""\
             Game ID: {self.id}
             Текущий ход: {self.current_player.first_name}
@@ -51,6 +51,9 @@ class Game(BaseModel):
                 Пригласи друга:
                 {self.deeplink}
             """)
+
+        if additional_text:
+            message += '\n'.join(additional_text)
 
         return message
     

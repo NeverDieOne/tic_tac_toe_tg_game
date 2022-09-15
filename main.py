@@ -333,14 +333,28 @@ async def remove_game(
 ) -> States:
     chat_id = update.effective_chat.id  # type: ignore
     game_id = context.user_data['current_game_id']  # type: ignore
+    message_id = context.user_data['message_id']  # type: ignore
     game: Game = Game(**json.loads(context.bot_data[game_id]))
     
     for player in game.participants.copy():
         if player.chat_id == chat_id:
             game.participants.remove(player)
+            leaved_player = player
+            game.state = GameStates.PLAYER_WAITING
+    
+    for player in game.participants:
+        await context.bot.edit_message_text(
+            text=game.generate_message([
+                f'Игрок {leaved_player.first_name} вышел из игры'
+            ]),
+            chat_id=player.chat_id,
+            message_id=player.message_id,  # type: ignore
+            reply_markup=InlineKeyboardMarkup(get_field_buttons(game.field))
+        )
 
-    message = await context.bot.send_message(
+    await context.bot.edit_message_text(
         chat_id=chat_id,
+        message_id=message_id,
         text='Выбирай что хочешь сделать:',
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton('Создать игру', callback_data='new_game')],
@@ -350,9 +364,8 @@ async def remove_game(
         ])
     )
 
+    context.bot_data[game_id] = game.json()
     del context.user_data['current_game_id']  # type: ignore
-    context.user_data['message_id'] = message.id  # type: ignore
-
     return States.MENU
 
 
